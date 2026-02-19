@@ -12,14 +12,27 @@ project. You may pick your choice of server via setting the env `LETSCERT_SERVER
 Please see the sample environment file, `env`, for more custom setting.
 
 ## Usage
-
+### Build from source
 ```
 # build and run in daemon mode
-# need to provide volume for persisting letsencrypt artifacts
-docker run -d --name letscert -v letsencrypt:/etc/letsencrypt $(docker build -q .)
+# need to provide volume for persisting Let's Encrypt artifacts
+docker run -d --rm --name letscert -v ./letsencrypt:/etc/letsencrypt $(docker build -q .)
 
 # initial setup
 docker exec -it letscert setup
 ```
 
+### Pull from registry
+```
+# pull and run in daemon mode
+docker run -d --rm --name letscert -v ./letsencrypt:/etc/letsencrypt ghcr.io/phoebuss/letscert
+
+# initial setup
+docker exec -it letscert setup
+```
+
+### Setup with custom ACME DNS server
+```
+docker exec -it -e LETSCERT_SERVER=dns.server.you.named.it letscert setup
+```
 [1]: https://github.com/acme-dns/acme-dns
