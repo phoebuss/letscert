@@ -1,0 +1,13 @@
+# ACME DNS server
+#LETSCERT_SERVER=auth.acme-dns.io
+
+# the domain name for which will obtain a certificate
+#LETSCERT_DOMAIN=mydomain.example.org
+
+# account registered on the ACME DNS server
+#LETSCERT_USERNAME=
+#LETSCERT_PASSWORD=
+#LETSCERT_SUBDOMAIN=
+
+# timezone setting
+#TZ=America/Los_Angeles

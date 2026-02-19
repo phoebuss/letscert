@@ -1,0 +1,158 @@
+#!/usr/bin/env python3
+
+import requests as rq
+import os
+import time
+import re
+import subprocess
+
+DEFAULT_LETSCERT_SERVER = "auth.acme-dns.io"
+RETRY = 10
+
+INITED_STAMP_FILE = "/app/.inited"
+
+AUTH_HOOK_TEMPLATE = "/app/auth_hook.tmpl"
+AUTH_HOOK_FILE = "/app/auth_hook.py"
+
+RENEW_HOOK_SRC = "/app/renew-cert"
+RENEW_HOOK_DST = "/etc/periodic/weekly/renew-cert"
+
+def get_confirm(prompt):
+    while True:
+        s = input(f"{prompt} (y/n): ").lower().strip()
+        if s in ('y', 'yes'):
+            return True
+        if s in ('n', 'no'):
+            return False
+        print("Please enter 'y' or 'n'.")
+
+def dns_query(name: str, record_type: str) -> list[str]:
+    url = "https://dns.google/resolve"
+    params = {
+        "name": name,
+        "type": record_type,
+        }
+    with rq.get(url, params = params) as r:
+        if not r.ok:
+            raise Exception(f"failed on HTTP GET ({r.reason}): {r.url}")
+        data = r.json()
+
+    _ans = data.get("Answer")
+    if not _ans:
+        return []
+
+    _type = data["Question"][0]["type"]
+
+    return [a["data"].strip('"').rstrip('.') for a in _ans if a["type"] == _type]
+
+def get_domain() -> str:
+    domain = os.getenv("LETSCERT_DOMAIN")
+    if not domain:
+        print("INFO: env LETSCERT_DOMAIN is not defined.")
+        domain = input(f"Please enter the domain name: ")
+    return domain.lower().strip()
+
+def get_server() -> str:
+    server = os.getenv("LETSCERT_SERVER")
+    if not server:
+        print("INFO: env LETSCERT_SERVER is not defined, using the default one.")
+        server = DEFAULT_LETSCERT_SERVER
+    return server.lower().strip()
+
+def check_cname_update_status(name: str, target: str):
+    for i in range(RETRY):
+        print(f"Trying DNS query (retry: {i}), expect: CNAME {name} => {target}")
+        r = dns_query(name, "CNAME")
+        if target in r:
+            return
+        time.sleep(10)
+    raise Exception(f"Failed on DNS query!!!")
+
+def get_account(domain: str, server: str) -> tuple[str, str, str]:
+    username = os.getenv("LETSCERT_USERNAME")
+    password = os.getenv("LETSCERT_PASSWORD")
+    subdomain = os.getenv("LETSCERT_SUBDOMAIN")
+    if not (username and password and subdomain):
+        print("INFO: creating account on the ACME DNS server ...")
+        url = f"https://{server}/register"
+        with rq.post(url) as r:
+            if not r.ok:
+                raise Exception(f"failed on HTTP POST ({r.reason}): {r.url}")
+            data = r.json()
+
+            username = data.get("username")
+            password = data.get("password")
+            subdomain = data.get("subdomain")
+            if not (username and password and subdomain):
+                raise Exception(f"malformat response from the ACME DNS server:\n{r.text}")
+
+    name = f"_acme-challenge.{domain}"
+    target = f"{subdomain}.{server}"
+    print(f"""
+INFO: please add a record on your DNS server:
+
+  type: CNAME     
+  name: {name}
+target: {target}
+
+""");
+    if not get_confirm("Please confirm if the DNS record is added."):
+        raise Exception("Abort!!!")
+
+    check_cname_update_status(name, target)
+    return username, password, subdomain
+
+def generate_auth_hook(server: str, username: str, password: str, subdomain: str):
+    matching = {
+        "%%SERVER%%": server,
+        "%%USERNAME%%": username,
+        "%%PASSWORD%%": password,
+        "%%SUBDOMAIN%%": subdomain,
+        }
+    pattern = re.compile("|".join(re.escape(k) for k in matching))
+
+    with open(AUTH_HOOK_TEMPLATE, "r") as tmpl, open(AUTH_HOOK_FILE, "w") as f:
+        for l in tmpl:
+            f.write(pattern.sub(lambda m: matching.get(m.group(0), m.group(0)), l))
+
+    os.chmod(AUTH_HOOK_FILE, 0o755)
+
+def obtain_cert(domain: str, dryrun: bool=False):
+    cmd = ["certbot", "certonly",
+           "-d", domain, "-d", f"*.{domain}",
+           "--manual", "--manual-auth-hook", AUTH_HOOK_FILE, "--reuse-key",
+           "--preferred-challenges", "dns", "--register-unsafely-without-email",
+           "--non-interactive", "--agree-tos", "--no-eff-email"]
+    if dryrun:
+        cmd += ["--dry-run"]
+
+    subprocess.run(cmd)
+
+def install_renew_hook():
+    os.symlink(RENEW_HOOK_SRC, RENEW_HOOK_DST)
+
+def setup():
+    domain = get_domain()
+    print(f"INFO: requesting certificate for domain: [{domain}]")
+
+    server = get_server()
+    print(f"INFO: using the ACME DNS server: [{server}]")
+
+    username, password, subdomain = get_account(domain, server)
+    generate_auth_hook(server, username, password, subdomain)
+    obtain_cert(domain)
+    install_renew_hook()
+
+    with open(INITED_STAMP_FILE, "a"):
+        pass
+
+def main():
+    print("Let's Encrypt certificate renewal setup...")
+    if not os.path.exists(INITED_STAMP_FILE):
+        try:
+            setup()
+        except Exception as e:
+            print(f"ERROR: {e}")
+
+if __name__ == "__main__":
+    main()

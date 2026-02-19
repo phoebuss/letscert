@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+
+import requests
+import os
+
+SERVER = "%%SERVER%%"
+USERNAME = "%%USERNAME%%"
+PASSWORD = "%%PASSWORD%%"
+SUBDOMAIN = "%%SUBDOMAIN%%"
+
+txt = os.getenv("CERTBOT_VALIDATION")
+
+url = f"https://{SERVER}/update"
+headers = {"X-Api-User": USERNAME, "X-Api-Key": PASSWORD}
+data = {"subdomain": SUBDOMAIN, "txt": txt}
+
+with requests.post(url, json=data, headers=headers) as r:
+    if not r.ok:
+        raise Exception(f"failed, {r.url}, {headers}, {data}, {r.reason}")
