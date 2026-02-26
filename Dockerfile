@@ -4,7 +4,7 @@ WORKDIR /app
 
 ENV PATH=$PATH:/app
 
-RUN apk update && apk add tzdata certbot
+RUN apk update && apk add --no-cache tzdata certbot
 
 COPY setup auth_hook.tmpl renew-cert .
 
