@@ -15,7 +15,8 @@ Please see the sample environment file, `env`, for more custom settings.
 ```sh
 # Build and run in daemon mode
 # You need to provide a volume for persisting Let's Encrypt artifacts
-docker run -d --rm --name letscert -v ./letsencrypt:/etc/letsencrypt $(docker build -q .)
+docker run -d --rm --name letscert -v ./cert:/cert -v ./data:/data \
+    -e UID=$(id -u) -e GID=$(id -g) $(docker build -q .)
 
 # Initial setup
 docker exec -it letscert setup
@@ -25,7 +26,8 @@ docker exec -it letscert setup
 
 ```sh
 # Pull and run in daemon mode
-docker run -d --rm --name letscert -v ./letsencrypt:/etc/letsencrypt ghcr.io/phoebuss/letscert
+docker run -d --rm --name letscert -v ./cert:/cert -v ./data:/data \
+    -e UID=$(id -u) -e GID=$(id -g) ghcr.io/phoebuss/letscert
 
 # Initial setup
 docker exec -it letscert setup

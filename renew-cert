@@ -1,2 +1,32 @@
 #!/usr/bin/env sh
-certbot renew -q
+
+set -e
+
+RENEW_INTERVAL=604800
+INITED_STAMP_FILE="/data/.inited"
+CERTBOT_CONFIG_DIR="/cert"
+CERTBOT_WORK_DIR="/data/certbot-work"
+CERTBOT_LOGS_DIR="/data/certbot-logs"
+
+while true; do
+    if [ ! -f "$INITED_STAMP_FILE" ]; then
+        echo "Waiting for setup to complete."
+        echo "Please run 'docker exec -it letscert setup'."
+        sleep 10
+        continue
+    fi
+
+    if [ -f "${CERTBOT_LOGS_DIR}/.certbot.lock'" ]; then
+        echo "Waiting for releasing .certbot.lock."
+        sleep 5
+        continue
+    fi
+
+    certbot renew \
+        --config-dir "$CERTBOT_CONFIG_DIR" \
+        --work-dir "$CERTBOT_WORK_DIR" \
+        --logs-dir "$CERTBOT_LOGS_DIR"
+
+    echo "Certificate renewal check completed. Next check in $((RENEW_INTERVAL / 86400)) days."
+    sleep "$RENEW_INTERVAL"
+done

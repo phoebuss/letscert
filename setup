@@ -9,13 +9,14 @@ import subprocess
 DEFAULT_LETSCERT_SERVER = "auth.acme-dns.io"
 RETRY = 10
 
-INITED_STAMP_FILE = "/app/.inited"
+INITED_STAMP_FILE = "/data/.inited"
 
 AUTH_HOOK_TEMPLATE = "/app/auth_hook.tmpl"
-AUTH_HOOK_FILE = "/app/auth_hook.py"
+AUTH_HOOK_FILE = "/data/auth_hook.py"
 
-RENEW_HOOK_SRC = "/app/renew-cert"
-RENEW_HOOK_DST = "/etc/periodic/weekly/renew-cert"
+CERTBOT_CONFIG_DIR = "/cert"
+CERTBOT_WORK_DIR = "/data/certbot-work"
+CERTBOT_LOGS_DIR = "/data/certbot-logs"
 
 def get_confirm(prompt):
     while True:
@@ -119,6 +120,9 @@ def generate_auth_hook(server: str, username: str, password: str, subdomain: str
 
 def obtain_cert(domain: str, dryrun: bool=False):
     cmd = ["certbot", "certonly",
+           "--config-dir", CERTBOT_CONFIG_DIR,
+           "--work-dir", CERTBOT_WORK_DIR,
+           "--logs-dir", CERTBOT_LOGS_DIR,
            "-d", domain, "-d", f"*.{domain}",
            "--manual", "--manual-auth-hook", AUTH_HOOK_FILE, "--reuse-key",
            "--preferred-challenges", "dns", "--register-unsafely-without-email",
@@ -127,9 +131,6 @@ def obtain_cert(domain: str, dryrun: bool=False):
         cmd += ["--dry-run"]
 
     subprocess.run(cmd)
-
-def install_renew_hook():
-    os.symlink(RENEW_HOOK_SRC, RENEW_HOOK_DST)
 
 def setup():
     domain = get_domain()
@@ -141,7 +142,6 @@ def setup():
     username, password, subdomain = get_account(domain, server)
     generate_auth_hook(server, username, password, subdomain)
     obtain_cert(domain)
-    install_renew_hook()
 
     with open(INITED_STAMP_FILE, "a"):
         pass

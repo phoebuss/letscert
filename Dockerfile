@@ -4,12 +4,14 @@ WORKDIR /app
 
 ENV PATH=$PATH:/app
 
-RUN apk update && apk add --no-cache tzdata certbot
+RUN apk update && apk add --no-cache su-exec tzdata certbot
 
-COPY setup auth_hook.tmpl renew-cert .
+COPY entrypoint.sh setup auth_hook.tmpl renew-cert .
 
-RUN chmod +x setup renew-cert
+RUN chmod +x entrypoint.sh setup renew-cert
 
-ENTRYPOINT ["tail", "-f", "/dev/null"]
+ENTRYPOINT ["entrypoint.sh"]
+
+CMD ["renew-cert"]
 
 LABEL org.opencontainers.image.source="https://github.com/phoebuss/letscert"
