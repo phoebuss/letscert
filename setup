@@ -17,6 +17,24 @@ AUTH_HOOK_FILE = "/data/auth_hook.py"
 CERTBOT_CONFIG_DIR = "/cert"
 CERTBOT_WORK_DIR = "/data/certbot-work"
 CERTBOT_LOGS_DIR = "/data/certbot-logs"
+CONFIGURED_DOMAINS_FILE = "/data/configured_domains.txt"
+
+def get_configured_domains() -> list[str]:
+    """Get list of already configured domains."""
+    if not os.path.exists(CONFIGURED_DOMAINS_FILE):
+        return []
+    with open(CONFIGURED_DOMAINS_FILE, "r") as f:
+        return [line.strip() for line in f if line.strip()]
+
+def add_configured_domain(domain: str):
+    """Add domain to configured domains list."""
+    with open(CONFIGURED_DOMAINS_FILE, "a") as f:
+        f.write(f"{domain}\n")
+
+def get_auth_hook_path(domain: str) -> str:
+    """Get unique auth hook path for domain."""
+    domain_hash = domain.replace(".", "_").replace("-", "_")
+    return f"/data/auth_hook_{domain_hash}.py"
 
 def get_confirm(prompt):
     while True:
@@ -92,7 +110,7 @@ def get_account(domain: str, server: str) -> tuple[str, str, str]:
     print(f"""
 INFO: please add a record on your DNS server:
 
-  type: CNAME     
+  type: CNAME
   name: {name}
 target: {target}
 
@@ -103,28 +121,32 @@ target: {target}
     check_cname_update_status(name, target)
     return username, password, subdomain
 
-def generate_auth_hook(server: str, username: str, password: str, subdomain: str):
+def generate_auth_hook(server: str, username: str, password: str, subdomain: str, domain: str) -> str:
+    auth_hook_path = get_auth_hook_path(domain)
+
     matching = {
         "%%SERVER%%": server,
         "%%USERNAME%%": username,
         "%%PASSWORD%%": password,
         "%%SUBDOMAIN%%": subdomain,
-        }
+    }
     pattern = re.compile("|".join(re.escape(k) for k in matching))
 
-    with open(AUTH_HOOK_TEMPLATE, "r") as tmpl, open(AUTH_HOOK_FILE, "w") as f:
+    with open(AUTH_HOOK_TEMPLATE, "r") as tmpl, open(auth_hook_path, "w") as f:
         for l in tmpl:
             f.write(pattern.sub(lambda m: matching.get(m.group(0), m.group(0)), l))
 
-    os.chmod(AUTH_HOOK_FILE, 0o755)
+    os.chmod(auth_hook_path, 0o755)
+    return auth_hook_path
 
-def obtain_cert(domain: str, dryrun: bool=False):
+def obtain_cert(domain: str, auth_hook_path: str, dryrun: bool=False):
     cmd = ["certbot", "certonly",
            "--config-dir", CERTBOT_CONFIG_DIR,
            "--work-dir", CERTBOT_WORK_DIR,
            "--logs-dir", CERTBOT_LOGS_DIR,
+           "--cert-name", domain,
            "-d", domain, "-d", f"*.{domain}",
-           "--manual", "--manual-auth-hook", AUTH_HOOK_FILE, "--reuse-key",
+           "--manual", "--manual-auth-hook", auth_hook_path, "--reuse-key",
            "--preferred-challenges", "dns", "--register-unsafely-without-email",
            "--non-interactive", "--agree-tos", "--no-eff-email"]
     if dryrun:
@@ -136,23 +158,38 @@ def setup():
     domain = get_domain()
     print(f"INFO: requesting certificate for domain: [{domain}]")
 
+    existing_domains = get_configured_domains()
+    if existing_domains:
+        print(f"INFO: existing configured domains: {', '.join(existing_domains)}")
+
+    if domain in existing_domains:
+        print(f"INFO: domain [{domain}] is already configured, skipping.")
+        return
+
     server = get_server()
     print(f"INFO: using the ACME DNS server: [{server}]")
 
     username, password, subdomain = get_account(domain, server)
-    generate_auth_hook(server, username, password, subdomain)
-    obtain_cert(domain)
+    auth_hook_path = generate_auth_hook(server, username, password, subdomain, domain)
+    try:
+        obtain_cert(domain, auth_hook_path)
+        add_configured_domain(domain)
+        print(f"INFO: certificate for domain [{domain}] obtained successfully.")
 
-    with open(INITED_STAMP_FILE, "a"):
-        pass
+        if not os.path.exists(INITED_STAMP_FILE):
+            with open(INITED_STAMP_FILE, "a"):
+                pass
+    except Exception as e:
+        if os.path.exists(auth_hook_path):
+            os.remove(auth_hook_path)
+        raise e
 
 def main():
     print("Let's Encrypt certificate renewal setup...")
-    if not os.path.exists(INITED_STAMP_FILE):
-        try:
-            setup()
-        except Exception as e:
-            print(f"ERROR: {e}")
+    try:
+        setup()
+    except Exception as e:
+        print(f"ERROR: {e}")
 
 if __name__ == "__main__":
     main()
