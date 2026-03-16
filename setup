@@ -152,7 +152,10 @@ def obtain_cert(domain: str, auth_hook_path: str, dryrun: bool=False):
     if dryrun:
         cmd += ["--dry-run"]
 
-    subprocess.run(cmd)
+    try:
+        subprocess.run(cmd, check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"Command: {' '.join(map(str, cmd))}\n failed with return code {e.returncode}")
 
 def setup():
     domain = get_domain()
