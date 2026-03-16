@@ -1,0 +1,41 @@
+#!/usr/bin/env sh
+
+set -e
+set -x
+
+[ -d /cert ] || {
+    echo "volume /cert is not provided!"
+    false
+}
+
+if [ ! -d /data ]; then
+    mkdir -p /data
+fi
+
+HOST_UID=$(awk '$1 == 0 { print $2 }' /proc/self/uid_map)
+[ "$HOST_UID" != "0" ] && {
+    echo "Running in ROOTLESS mode."
+    USER=root
+
+} || {
+    echo "Ruuning in ROOT mode. Setup user..."
+
+    USER=app
+    (id $USER &>/dev/null) || {
+        [ x"${UID}" != x ] || {
+            echo "UID is not set!"
+            false
+        }
+
+        [ x"${GID}" != x ] || {
+            echo "GID is not set!"
+            false
+        }
+
+        adduser -D -u $UID -g $GID $USER
+        chown -R ${UID}:${GID} /cert
+        chown -R ${UID}:${GID} /data
+    }
+}
+
+exec su-exec $USER "$@"
